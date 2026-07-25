@@ -154,6 +154,8 @@ import {
   convertPerMessageProfileToBeeperFormat,
   getCurrentlyUsedPerMessageProfileForAccount,
   getCurrentlyUsedPerMessageProfileForRoom,
+  type PerMessageProfile,
+  setCurrentlyUsedPerMessageProfileIdForRoom,
 } from '$hooks/usePerMessageProfile';
 import {
   Bell,
@@ -362,7 +364,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const [pkCompatEnable] = useSetting(settingsAtom, 'pkCompat');
     const [pmpProxyingEnable] = useSetting(settingsAtom, 'pmpProxying');
+    const [pmpLatchingEnable] = useSetting(settingsAtom, 'pmpLatching');
     const [pmpPickerEnable] = useSetting(settingsAtom, 'pmpPicker');
+
+    const [latchedPersona, setLatchedPersona] = useState<PerMessageProfile>();
 
     const emojiBtnRef = useRef<HTMLButtonElement>(null);
     const micBtnRef = useRef<HTMLButtonElement>(null);
@@ -1329,6 +1334,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (proxiedPerMessageProfile) {
           const stripped = pluralkitProxyMessageHandler.stripProxyFromMessage(plainText);
           if (stripped !== undefined) {
+            
+            
             // Re-run the normal outgoing pipeline on the stripped content so the message
             // goes through the same transforms/parsers as any other message.
             serializedChildren = plainToEditorInput(stripped);
@@ -1347,6 +1354,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 room,
               })
             );
+
+            if (pmpLatchingEnable) {
+              await setCurrentlyUsedPerMessageProfileIdForRoom(mx, roomId, proxiedPerMessageProfile.id);
+              setLatchedPersona(proxiedPerMessageProfile);
+            }
           }
         }
       }
@@ -1388,7 +1400,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
        */
       const globalPerMessageProfile = await getCurrentlyUsedPerMessageProfileForAccount(mx);
       const roomPerMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-      let perMessageProfile = roomPerMessageProfile ?? globalPerMessageProfile;
+      let perMessageProfile = latchedPersona ?? roomPerMessageProfile ?? globalPerMessageProfile;
 
       if (pmpProxyingEnable) {
         if (proxiedPerMessageProfile) perMessageProfile = proxiedPerMessageProfile;
@@ -1548,7 +1560,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       replyDraft,
       silentReply,
       pmpProxyingEnable,
-      pluralkitProxyMessageHandler,
+pmpLatchingEnable,      pluralkitProxyMessageHandler,
       scheduledTime,
       editingScheduledDelayId,
       nicknames,
@@ -1572,6 +1584,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       editingEvent,
       getEditingContent,
       onCancelEdit,
+      latchedPersona
     ]);
 
     const handleKeyDown: KeyboardEventHandler = useCallback(
@@ -2211,6 +2224,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   roomId={roomId}
                   suppressEditorRefocus={suppressEditorRefocus}
                   onTabChange={setPersonaPickerTab}
+                  latchedPersona={latchedPersona}
                 />
               )}
             </>

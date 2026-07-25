@@ -51,6 +51,7 @@ type PersonaPickerProps = {
   roomId: string;
   suppressEditorRefocus: () => void;
   onTabChange: (tab: PersonaPickerTab) => void;
+  latchedPersona: PerMessageProfile | undefined;
 };
 
 export function PersonaPicker({
@@ -58,15 +59,14 @@ export function PersonaPicker({
   mx,
   roomId,
   suppressEditorRefocus,
-  onTabChange,
-}: PersonaPickerProps) {
+  onTabChange, latchedPersona}: PersonaPickerProps) {
   const useAuthentication = useMediaAuthentication();
   const [AddPersonaMenuAnchor, setAddPersonaMenuAnchor] = useState<RectCords>();
   const [profiles, setProfiles] = useState<PerMessageProfile[] | undefined>(undefined);
   const [selectedGlobalPersona, setSelectedGlobalPersona] = useState<PerMessageProfile | null>(
     null
   );
-  const [selectedRoomPersona, setSelectedRoomPersona] = useState<PerMessageProfile | null>(null);
+  const [selectedRoomPersona, setSelectedRoomPersona] = useState<PerMessageProfile | null>(latchedPersona ?? null);
   const isPickerMenuItemSelected = (persona: PerMessageProfile) => {
     const selectedPersona =
       tab === PersonaPickerTab.Global ? selectedGlobalPersona : selectedRoomPersona;
@@ -94,13 +94,13 @@ export function PersonaPicker({
   useEffect(() => {
     const syncProfile = async () => {
       const syncedRoomProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-      setSelectedRoomPersona(syncedRoomProfile ?? null);
+      if (!selectedRoomPersona) setSelectedRoomPersona(syncedRoomProfile ?? null);
 
       const syncedGlobalProfile = await getCurrentlyUsedPerMessageProfileForAccount(mx);
       setSelectedGlobalPersona(syncedGlobalProfile ?? null);
     };
     syncProfile();
-  }, [mx, roomId, profiles]);
+  }, [mx, roomId, profiles, latchedPersona,selectedRoomPersona]);
 
   const fetchProfiles = async (mx_: MatrixClient) => {
     const fetchedProfiles = await getAllPerMessageProfiles(mx_);

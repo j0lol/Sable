@@ -46,13 +46,9 @@ updates:
     commit-message:
       prefix: chore
     groups:
-      npm-major:
-        update-types:
-          - major
-      npm-non-major:
-        update-types:
-          - minor
-          - patch
+      npm:
+        patterns:
+          - '*'
 
   - package-ecosystem: cargo
     cooldown:
@@ -66,18 +62,6 @@ updates:
     commit-message:
       prefix: chore
     groups:
-      # tauri core + build + plugins are version-coupled; bump together so a
-      # core major bump lands with matching plugin updates in the same PR
-      # rather than as broken intermediate states.
-      tauri-family:
+      cargo:
         patterns:
-          - tauri
-          - tauri-build
-          - tauri-plugin-*
-      cargo-major:
-        update-types:
-          - major
-      cargo-non-major:
-        update-types:
-          - minor
-          - patch
+          - '*'

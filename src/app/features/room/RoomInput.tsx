@@ -109,6 +109,7 @@ import { loadImageElementFromMediaUrl } from '$utils/dom';
 import { safeFile } from '$utils/mimeTypes';
 import { fulfilledPromiseSettledResult } from '$utils/common';
 import { useSetting } from '$state/hooks/settings';
+import type { EditorButtonId } from '$state/settings';
 import { settingsAtom } from '$state/settings';
 import { matchesShortcut } from '../../keyboard/shortcuts';
 import {
@@ -192,6 +193,7 @@ import {
   getImagePackReferencesForMxcWrappedInMap,
 } from '$utils/msc4459helper';
 import { ImageUsage } from '$plugins/custom-emoji';
+import { getPackImageInfo } from '$plugins/custom-emoji/utils';
 import { SerializableMap } from '$types/wrapper/SerializableMap';
 import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
 import { AttachmentSheet } from '$components/attachment-sheet/AttachmentSheet';
@@ -370,6 +372,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [latchedPersona, setLatchedPersona] = useState<PerMessageProfile>();
 
     const emojiBtnRef = useRef<HTMLButtonElement>(null);
+    const gifBtnRef = useRef<HTMLButtonElement>(null);
+    const stickerBtnRef = useRef<HTMLButtonElement>(null);
     const micBtnRef = useRef<HTMLButtonElement>(null);
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
@@ -545,6 +549,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [emojiBoardTab, setEmojiBoardTab] = useState<EmojiBoardTab | undefined>(undefined);
     // Android back closes the mobile emoji board instead of navigating away.
     useDismissOnBack(() => setEmojiBoardTab(undefined), emojiBoardTab !== undefined);
+
+    const toggleEmojiBoardTab = useCallback((tab: EmojiBoardTab) => {
+      setEmojiBoardTab((prev) => (prev === tab ? undefined : tab));
+    }, []);
+
     const [personaPickerTab, setPersonaPickerTab] = useState<PersonaPickerTab | undefined>(
       undefined
     );
@@ -1258,7 +1267,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         serializedChildren = transform.apply(serializedChildren, outgoingTransformContext);
       });
 
-      let plainText = toPlainText(serializedChildren, true, nicknameReplacement).trim();
+      let plainText = toPlainText(serializedChildren, true, true, nicknameReplacement).trim();
 
       /**
        * the html we will send
@@ -1332,7 +1341,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         proxiedPerMessageProfile =
           await pluralkitProxyMessageHandler.getPmpBasedOnMessage(plainText);
         if (proxiedPerMessageProfile) {
-          const stripped = pluralkitProxyMessageHandler.stripProxyFromMessage(plainText);
+          // normal plainText has spoilers stripped, but this breaks spoilers with a proxy tag.
+          // here we get a new 'unsanitized' plainText without spoiler stripping
+          let unsanitizedPlainText = toPlainText(
+            serializedChildren,
+            true,
+            false,
+            nicknameReplacement
+          ).trim();
+
+          const stripped = pluralkitProxyMessageHandler.stripProxyFromMessage(unsanitizedPlainText);
           if (stripped !== undefined) {
             
             
@@ -1345,7 +1363,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               serializedChildren = transform.apply(serializedChildren, outgoingTransformContext);
             });
 
-            plainText = toPlainText(serializedChildren, true, nicknameReplacement).trim();
+            plainText = toPlainText(serializedChildren, true, true, nicknameReplacement).trim();
             customHtml = trimCustomHtml(
               toMatrixCustomHTML(serializedChildren, {
                 stripNickname: true,
@@ -1742,16 +1760,26 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
     };
 
     const handleStickerSelect = async (mxc: string, shortcode: string, label: string) => {
-      const stickerUrl = mxcUrlToHttp(mx, mxc, useAuthentication);
-      if (!stickerUrl) return;
+      // Packs declare their own info, so sending does not need the file. Measuring it instead made
+      // the send fail outright whenever the media fetch did.
+      let info = getPackImageInfo(mx, room, ImageUsage.Sticker, mxc);
 
-      const { blob, image } = await loadImageElementFromMediaUrl(stickerUrl);
-      const info = getImageInfo(image, blob);
+      if (!info) {
+        const stickerUrl = mxcUrlToHttp(mx, mxc, useAuthentication);
+        if (stickerUrl) {
+          try {
+            const { blob, image } = await loadImageElementFromMediaUrl(stickerUrl);
+            info = getImageInfo(image, blob);
+          } catch (error) {
+            log.error('failed to measure sticker, sending without info', { mxc }, error);
+          }
+        }
+      }
 
       const content: StickerEventContent & ReplyEventContent & IContent & IGenericMSC4459 = {
         body: label,
         url: mxc,
-        info,
+        info: info ?? {},
       };
 
       // add the image pack reference
@@ -1780,7 +1808,11 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
           content['m.mentions'] = { ['user_ids']: [replyDraft.userId] };
         setReplyDraft(replyDraftBase);
       }
-      mx.sendEvent(roomId, EventType.Sticker, content);
+      try {
+        await mx.sendEvent(roomId, EventType.Sticker, content);
+      } catch (error) {
+        log.error('failed to send sticker', { roomId }, error);
+      }
     };
 
     const handleGifSelect = async (gif: GifData, spoiler?: boolean) => {
@@ -2244,15 +2276,7 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                       onCustomEmojiSelect={handleEmoticonSelect}
                       onStickerSelect={handleStickerSelect}
                       onGifSelect={handleGifSelect}
-                      requestClose={() => {
-                        setEmojiBoardTab((t) => {
-                          if (t) {
-                            if (!mobileOrTablet()) ReactEditor.focus(editor);
-                            return undefined;
-                          }
-                          return t;
-                        });
-                      }}
+                      requestClose={() => setEmojiBoardTab(undefined)}
                     />
                   );
                   const triggers = (
@@ -2262,8 +2286,9 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                         if (id === 'gif' && editorGifButton) {
                           button = (
                             <IconButton
+                              ref={gifBtnRef}
                               aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
-                              onClick={() => setEmojiBoardTab(EmojiBoardTab.Gif)}
+                              onClick={() => toggleEmojiBoardTab(EmojiBoardTab.Gif)}
                               onPointerDown={suppressEditorRefocus}
                               variant="SurfaceVariant"
                               size="300"
@@ -2280,8 +2305,9 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                         } else if (id === 'sticker' && editorStickerButton) {
                           button = (
                             <IconButton
+                              ref={stickerBtnRef}
                               aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}
-                              onClick={() => setEmojiBoardTab(EmojiBoardTab.Sticker)}
+                              onClick={() => toggleEmojiBoardTab(EmojiBoardTab.Sticker)}
                               onPointerDown={suppressEditorRefocus}
                               variant="SurfaceVariant"
                               size="300"
@@ -2300,8 +2326,8 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                           button = (
                             <IconButton
                               ref={emojiBtnRef}
-                              aria-pressed={emojiBoardTab !== undefined}
-                              onClick={() => setEmojiBoardTab(EmojiBoardTab.Emoji)}
+                              aria-pressed={emojiBoardTab === EmojiBoardTab.Emoji}
+                              onClick={() => toggleEmojiBoardTab(EmojiBoardTab.Emoji)}
                               onPointerDown={suppressEditorRefocus}
                               variant="SurfaceVariant"
                               size="300"
@@ -2311,7 +2337,7 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                               aria-label="Open emoji board"
                             >
                               {composerIcon(Smiley, {
-                                weight: emojiBoardTab !== undefined ? 'fill' : 'regular',
+                                weight: emojiBoardTab === EmojiBoardTab.Emoji ? 'fill' : 'regular',
                               })}
                             </IconButton>
                           );
@@ -2347,11 +2373,23 @@ pmpLatchingEnable,      pluralkitProxyMessageHandler,
                       alignOffset={-44}
                       position="Top"
                       align="End"
-                      anchor={
-                        emojiBoardTab === undefined
-                          ? undefined
-                          : (emojiBtnRef.current?.getBoundingClientRect() ?? undefined)
-                      }
+                      anchor={(() => {
+                        if (emojiBoardTab === undefined) return undefined;
+                        const buttonRefs: Record<EditorButtonId, RefObject<HTMLButtonElement>> = {
+                          gif: gifBtnRef,
+                          sticker: stickerBtnRef,
+                          emoji: emojiBtnRef,
+                        };
+                        for (let i = editorButtonOrder.length - 1; i >= 0; i--) {
+                          const id = editorButtonOrder[i];
+                          if (!id) continue;
+                          const btnRef = buttonRefs[id];
+                          if (btnRef?.current) {
+                            return btnRef.current.getBoundingClientRect();
+                          }
+                        }
+                        return undefined;
+                      })()}
                       content={emojiBoard}
                     >
                       {triggers}

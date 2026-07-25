@@ -1,6 +1,6 @@
 import { SequenceCard } from '$components/sequence-card';
-import { Box, Button, Text, Avatar, config, IconButton, Input, toRem, Spinner, color } from 'folds';
-import { menuIcon, Trash, X } from '$components/icons/phosphor';
+import { Box, Button, Text, Avatar, config, IconButton, Input, Spinner, toRem, color } from 'folds';
+import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import type { MatrixClient } from '$types/matrix-sdk';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nameInitials } from '$utils/common';
@@ -26,7 +26,8 @@ import type { PronounSet } from '$utils/pronouns';
 import { parsePronounsStringToPronounsSetArray } from '$utils/pronouns';
 import { SequenceCardStyle } from '../styles.css';
 import { SettingTile } from '$components/setting-tile';
-import { type AsyncState, AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
+import { type AsyncState } from '$hooks/useAsyncCallback';
+import { Trash,X,menuIcon } from '$components/icons/phosphor';
 
 const constructProxyString = (s: Shorthand) => {
   return `${s.prefix ?? ''}text${s.suffix ?? ''}`;
@@ -407,13 +408,15 @@ export function PerMessageProfileEditor({
   /**
    * persisting the data :3
    */
-  const handleSave = useCallback(() => {
-    addOrUpdatePerMessageProfile(mx, {
-      id: profileId,
-      name: newDisplayName,
-      avatarUrl: avatarMxc,
-      pronouns: newPronouns,
-    }).then(() => {
+  const [saveState, handleSave] = useAsyncCallback(
+    useCallback(async () => {
+      await addOrUpdatePerMessageProfile(mx, {
+        id: profileId,
+        name: newDisplayName,
+        avatarUrl: avatarMxc,
+        pronouns: newPronouns,
+      });
+
       setCurrentDisplayName(newDisplayName);
       setCurrentPronouns(newPronouns);
       setImageHasChanges(false);
@@ -424,16 +427,17 @@ export function PerMessageProfileEditor({
           setCurrentId(newId);
         });
       }
-    });
-  }, [mx, profileId, newDisplayName, avatarMxc, newPronouns, hasIdChange, newId]);
+    }, [mx, profileId, newDisplayName, avatarMxc, newPronouns, hasIdChange, newId])
+  );
 
-  const handleDelete = useCallback(() => {
-    deletePerMessageProfile(mx, profileId).then(() => {
+  const [deleteState, handleDelete] = useAsyncCallback(
+    useCallback(async () => {
+      await deletePerMessageProfile(mx, profileId);
       setCurrentDisplayName('');
       setCurrentPronouns([]);
       if (onDelete) onDelete(profileId);
-    });
-  }, [mx, profileId, onDelete]);
+    }, [mx, profileId, onDelete])
+  );
 
   const handleIdChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setNewId(e.target.value);
@@ -639,11 +643,17 @@ export function PerMessageProfileEditor({
           size="400"
           radii="300"
           variant="Critical"
+          disabled={deleteState.status === AsyncStatus.Loading}
           fill="None"
           aria-label={`Delete profile ${profileId}`}
           title={`Delete profile ${profileId}`}
         >
           <Text size="B300">Delete persona</Text>
+          {deleteState.status === AsyncStatus.Loading ? (
+            <Spinner size="100" variant="Critical" fill="Solid" />
+          ) : (
+            <Text size="B300">Delete</Text>
+          )}
         </Button>
 
         <Button
@@ -651,11 +661,15 @@ export function PerMessageProfileEditor({
           size="400"
           radii="300"
           variant="Primary"
-          disabled={!hasChanges}
+          disabled={!hasChanges || saveState.status === AsyncStatus.Loading}
           aria-label={`Save profile changes for ${profileId}`}
           title={`Save profile changes for ${profileId}`}
         >
-          <Text size="B300">Save</Text>
+          {saveState.status === AsyncStatus.Loading ? (
+            <Spinner size="100" variant="Primary" fill="Solid" />
+          ) : (
+            <Text size="B300">Save</Text>
+          )}
         </Button>
       </Box>
 

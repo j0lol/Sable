@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
+#MISE description="Copy CEF runtime libs next to the built binary"
 # Copy the CEF runtime (libcef.so + resources) next to a built binary so the app
 # is self-contained: works standalone, when launched by the OS via a sable://
 # deep link, or from a release package. Pair with the rpath=$ORIGIN that
 # build.rs adds for CEF builds.
 #
-# Usage: scripts/cef-copy-libs.sh [debug|release] [dest-dir]
+# Usage: scripts/cef/copy-libs.sh [debug|release] [dest-dir]
 #   dest-dir defaults to src-tauri/target/<profile> (beside the built binary).
 set -euo pipefail
 PROFILE="${1:-debug}"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEST="${2:-$ROOT/src-tauri/target/$PROFILE}"
 
-CEF_DIR="$(find "$ROOT/src-tauri/target/$PROFILE/build" -type d -name cef_linux_x86_64 2>/dev/null | head -1)"
+CEF_DIR="$(
+  find "$ROOT/src-tauri/target/$PROFILE/build" \
+    -type d -name cef_linux_x86_64 -print -quit 2>/dev/null || true
+)"
 if [ -z "$CEF_DIR" ]; then
   echo "❌ CEF dist not found under target/$PROFILE/build — build with --features cef first." >&2
   exit 1

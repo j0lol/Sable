@@ -56,7 +56,14 @@ import { heroMenuItemStyle } from './heroMenuItemStyle';
 import { CreatorChip } from './CreatorChip';
 import { UserInviteAlert, UserBanAlert, UserModeration, UserKickAlert } from './UserModeration';
 import { PowerChip } from './PowerChip';
-import { IgnoredUserAlert, MutualRoomsChip, OptionsChip, ServerChip, ShareChip } from './UserChips';
+import {
+  IgnoredUserAlert,
+  InspectChip,
+  MutualRoomsChip,
+  OptionsChip,
+  ServerChip,
+  ShareChip,
+} from './UserChips';
 import { UserHero, UserHeroName } from './UserHero';
 import { KnownMembership } from '$types/matrix-sdk';
 import { useRoomMemberHydration } from '$hooks/useRoomMemberHydration';
@@ -637,6 +644,7 @@ export function UserRoomProfile({
             )}
             {userId !== myUserId && <MutualRoomsChip userId={userId} {...chipColors} />}
             {userId !== myUserId && <OptionsChip userId={userId} {...chipColors} />}
+            {<InspectChip userId={userId} initialProfile={initialProfile} {...chipColors} />}
           </Box>
           {ignored && <IgnoredUserAlert />}
           {member && membership === bannedMembership && (

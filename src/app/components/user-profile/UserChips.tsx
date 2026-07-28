@@ -16,6 +16,11 @@ import {
   Box,
   Scroll,
   Avatar,
+  TextArea as TextAreaComponent,
+  OverlayCenter,
+  Overlay,
+  OverlayBackdrop,
+  Modal,
 } from 'folds';
 import {
   CaretDown,
@@ -24,8 +29,10 @@ import {
   HardDrives,
   Link,
   PencilSimple,
+  Code,
   profileIcon,
   Prohibit,
+  X,
 } from '$components/icons/phosphor';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { getMxIdServer } from '$utils/mxIdHelper';
@@ -57,6 +64,13 @@ import { heroMenuItemStyle } from './heroMenuItemStyle';
 import * as css from './styles.css';
 import { ResponsiveMenu } from '$components/ResponsiveMenu';
 import { useMenuAnchor } from '$hooks/useMenuAnchor';
+import { useUserProfile, type UserProfile } from '$hooks/useUserProfile';
+import { useTextAreaCodeEditor } from '$hooks/useTextAreaCodeEditor';
+import FocusTrap from 'focus-trap-react';
+import { CodeHighlightRenderer } from '$components/code-highlight';
+import { ModalWide } from '$styles/Modal.css';
+import { ModalOverlay } from '$components/modal-overlay/ModalOverlay';
+import { TextViewerContent } from '$components/text-viewer/TextViewer.css';
 
 export function ServerChip({
   server,
@@ -558,6 +572,90 @@ export function IgnoredUserAlert() {
         </Box>
       </SettingTile>
     </CutoutCard>
+  );
+}
+
+const EDITOR_INTENT_SPACE_COUNT = 2;
+export function InspectChip({
+  userId,
+  room,
+  innerColor,
+  cardColor,
+  textColor,
+  chipSurfaceStyle,
+  chipHoverBrightness,
+  initialProfile,
+}: {
+  userId: string;
+  room: Room;
+  innerColor?: string;
+  cardColor?: string;
+  textColor?: string;
+  chipSurfaceStyle?: CSSProperties;
+  chipFillColor?: string;
+  chipHoverBrightness?: number;
+  initialProfile?: Partial<UserProfile>;
+}) {
+  const fetchedProfile = useUserProfile(userId, room);
+  const extendedProfile =
+    fetchedProfile && Object.keys(fetchedProfile).length > 0
+      ? fetchedProfile
+      : (initialProfile as UserProfile) || fetchedProfile;
+
+  const [viewingInspect, setViewingInspect] = useState(false);
+  const inspectMenu = useMenuAnchor<HTMLButtonElement>();
+  const close = () => {
+    inspectMenu.close();
+    setViewingInspect(false);
+  };
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const { handleKeyDown } = useTextAreaCodeEditor(textAreaRef, EDITOR_INTENT_SPACE_COUNT);
+
+  const defaultContentStr = useMemo(
+    () => JSON.stringify(extendedProfile ?? {}, undefined, EDITOR_INTENT_SPACE_COUNT),
+    [initialProfile]
+  );
+
+  return (
+
+  <>
+  {viewingInspect && <ModalOverlay requestClose={() => setViewingInspect(false)}>
+    <Modal
+      className={ModalWide}
+      size="500"
+      onContextMenu={(evt: React.MouseEvent) => evt.stopPropagation()}
+    >
+          <div style={{ padding: config.space.S200, backgroundColor: innerColor }}>
+            <Box grow="Yes" direction="Column" gap="100" style={{color: textColor}}>
+              <Text size="H6">Profile JSON Content</Text>
+              <Text
+                as="pre"
+                size="T400"
+                className={TextViewerContent}
+                style={{ overflow: "scroll", padding: "1em", flexGrow: "1"}}
+                >
+              <CodeHighlightRenderer code={defaultContentStr} language="json"/>
+              </Text>
+            </Box>
+          </div>
+    </Modal>
+  </ModalOverlay>}
+      <Chip
+        variant={cardColor ? undefined : 'SurfaceVariant'}
+        radii="Pill"
+        onClick={(evt) => {
+          setViewingInspect(true);
+        }}
+        aria-pressed={!!inspectMenu.anchor}
+        className={cardColor ? css.UserHeroChipThemed : css.UserHeroBrightnessHover}
+        style={heroMenuItemStyle(
+          cardColor && chipSurfaceStyle ? chipSurfaceStyle : {},
+          chipHoverBrightness
+        )}
+      >
+        {viewingInspect ? profileIcon(X) : profileIcon(Code)}
+      </Chip>
+    </>
   );
 }
 
